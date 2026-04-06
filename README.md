@@ -78,7 +78,7 @@ The overlay hides automatically when nothing is playing or no lyrics are found f
 
 ## Configuration
 
-All settings are accessible via the **right-click menu** on the overlay — no file editing required.
+All settings are accessible via the **right-click menu** on the overlay and are automatically saved to `settings.json`. Your preferences are restored the next time the app starts — no file editing required.
 
 | Menu | Options |
 |---|---|
@@ -86,6 +86,8 @@ All settings are accessible via the **right-click menu** on the overlay — no f
 | **Opacity** | 40% / 55% / 70% / 85% / 100% |
 | **Font Size** | Small (16px) / Medium (20px) / Large (24px) / X-Large (30px) |
 | **Font** | Segoe UI / Arial / Calibri / Georgia / Consolas |
+| **Lyric Color** | White / Light Gray / Spotify Green / Sky Blue / Soft Yellow / Coral / Lavender / Custom… |
+| **Title Color** | Same presets as Lyric Color — controls the track name header |
 | **Context Lines** | 1 / 2 / 3 / 4 lines shown above and below the current line |
 | **Reset Position** | Snap overlay back to bottom-center of screen |
 
@@ -111,6 +113,7 @@ SpotifyMVLyrics/
 ├── lyrics_fetcher.py    # QThread — fetches synced lyrics from lrclib.net
 ├── lrc_parser.py        # Parses LRC [mm:ss.xx] format into timestamped lines
 ├── overlay.py           # PyQt6 transparent overlay widget + config menu
+├── settings.json        # Saved appearance preferences (created on first change)
 ├── .credentials.json    # Your API keys (git-ignored, created on first save)
 ├── .spotify_cache       # OAuth token cache (git-ignored, created on first login)
 └── requirements.txt

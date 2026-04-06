@@ -5,10 +5,12 @@ from PyQt6.QtCore    import Qt, QPoint, QRect, QRectF, pyqtSignal
 from PyQt6.QtGui     import QColor, QFont, QPainter, QBrush, QAction, QActionGroup
 from PyQt6.QtWidgets import (QWidget, QApplication, QMenu, QSizeGrip,
                               QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-                              QLabel, QLineEdit, QPushButton, QDialogButtonBox)
+                              QLabel, QLineEdit, QPushButton, QDialogButtonBox,
+                              QColorDialog)
 
 import config
 import credentials
+import settings
 
 _HEADER_H  = 34   # px reserved for track title at top
 _GRIP_SIZE = 22   # resize grip square
@@ -175,14 +177,17 @@ class LyricsOverlay(QWidget):
         self._artist_name: str           = ""
         self._status:      str           = "Waiting for Spotify\u2026"
 
-        # ── Live config (all editable via right-click menu) ────────────────────
-        self._bg_alpha    : int = config.OVERLAY_BG_ALPHA
-        self._font_family : str = config.OVERLAY_FONT_FAMILY
-        self._font_size   : int = config.OVERLAY_FONT_SIZE_PX
-        self._font_small  : int = config.OVERLAY_FONT_SMALL_PX
-        self._n_before    : int = config.OVERLAY_LINES_BEFORE
-        self._n_after     : int = config.OVERLAY_LINES_AFTER
-        self._user_hidden : bool = False   # True when the user chose "Hide to Tray"
+        # ── Live config (loaded from settings.json, editable via right-click menu)
+        _s = settings.load()
+        self._bg_alpha    : int    = _s["bg_alpha"]
+        self._font_family : str    = _s["font_family"]
+        self._font_size   : int    = _s["font_size"]
+        self._font_small  : int    = _s["font_small"]
+        self._n_before    : int    = _s["n_before"]
+        self._n_after     : int    = _s["n_after"]
+        self._font_color  : QColor = settings.color(_s["font_color"])
+        self._title_color : QColor = settings.color(_s["title_color"])
+        self._user_hidden : bool   = False   # True when the user chose "Hide to Tray"
 
         self._setup_window()
 
@@ -259,7 +264,9 @@ class LyricsOverlay(QWidget):
         # Track header
         if self._track_name:
             painter.setFont(QFont(self._font_family, 10, QFont.Weight.Bold))
-            painter.setPen(QColor(29, 185, 84, 230))
+            tc = QColor(self._title_color)
+            tc.setAlpha(230)
+            painter.setPen(tc)
             header = f"{self._track_name}  \u2013  {self._artist_name}"
             header = painter.fontMetrics().elidedText(
                 header, Qt.TextElideMode.ElideRight, w - margin * 2)
@@ -332,7 +339,9 @@ class LyricsOverlay(QWidget):
             painter.setPen(QColor(0, 0, 0, min(alpha + 30, 220)))
             painter.drawText(QRect(rect.x() + 1, rect.y() + 1, rect.width(), rect.height()),
                              align, text)
-            painter.setPen(QColor(255, 255, 255, alpha))
+            fc = QColor(self._font_color)
+            fc.setAlpha(alpha)
+            painter.setPen(fc)
             painter.drawText(rect, align, text)
 
     def _draw_status(self, painter: QPainter, w: int, h: int, margin: int) -> None:
@@ -423,6 +432,18 @@ class LyricsOverlay(QWidget):
             grp3.addAction(a)
             font_menu.addAction(a)
 
+        lyric_color_menu = self._make_color_menu(
+            menu, "  Lyric Color", self._font_color,
+            lambda c: self._set("_font_color", c),
+        )
+        menu.addMenu(lyric_color_menu)
+
+        title_color_menu = self._make_color_menu(
+            menu, "  Title Color", self._title_color,
+            lambda c: self._set("_title_color", c),
+        )
+        menu.addMenu(title_color_menu)
+
         menu.addSeparator()
 
         # ── Lyrics ────────────────────────────────────────────────────────────
@@ -479,6 +500,59 @@ class LyricsOverlay(QWidget):
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
+    def _make_color_menu(self, parent: QMenu, title: str,
+                         current: QColor, apply_fn) -> QMenu:
+        """Build a colour-picker submenu with named presets and a Custom… option."""
+        presets = [
+            ("White",         QColor(255, 255, 255)),
+            ("Light Gray",    QColor(200, 200, 200)),
+            ("Spotify Green", QColor(29,  185, 84)),
+            ("Sky Blue",      QColor(100, 180, 255)),
+            ("Soft Yellow",   QColor(255, 230, 100)),
+            ("Coral",         QColor(255, 110, 100)),
+            ("Lavender",      QColor(190, 150, 255)),
+        ]
+
+        submenu = QMenu(title, parent)
+        submenu.setStyleSheet(_MENU_QSS)
+
+        for name, color in presets:
+            a = QAction(self._color_icon(color), name, submenu)
+            a.setCheckable(True)
+            a.setChecked(color.rgb() == current.rgb())
+            a.triggered.connect(lambda _, c=color, fn=apply_fn: fn(c))
+            submenu.addAction(a)
+
+        submenu.addSeparator()
+        custom_act = QAction("  Custom\u2026", submenu)
+        custom_act.triggered.connect(lambda _, fn=apply_fn, cur=current: self._pick_custom_color(cur, fn))
+        submenu.addAction(custom_act)
+
+        return submenu
+
+    @staticmethod
+    def _color_icon(color: QColor):
+        """Return a small filled-square QIcon for use in menu items."""
+        from PyQt6.QtGui import QPixmap, QIcon
+        px = QPixmap(14, 14)
+        px.fill(Qt.GlobalColor.transparent)
+        p = QPainter(px)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QBrush(color))
+        p.setPen(QColor(255, 255, 255, 60))
+        p.drawRoundedRect(1, 1, 12, 12, 3, 3)
+        p.end()
+        return QIcon(px)
+
+    def _pick_custom_color(self, current: QColor, apply_fn) -> None:
+        color = QColorDialog.getColor(
+            current, self,
+            "Choose Color",
+            QColorDialog.ColorDialogOption.ShowAlphaChannel,
+        )
+        if color.isValid():
+            apply_fn(color)
+
     def _hide_to_tray(self) -> None:
         self._user_hidden = True
         self.hide()
@@ -492,6 +566,19 @@ class LyricsOverlay(QWidget):
     def _set(self, attr: str, value) -> None:
         setattr(self, attr, value)
         self.update()
+        self._save_settings()
+
+    def _save_settings(self) -> None:
+        settings.save({
+            "bg_alpha":    self._bg_alpha,
+            "font_family": self._font_family,
+            "font_size":   self._font_size,
+            "font_small":  self._font_small,
+            "n_before":    self._n_before,
+            "n_after":     self._n_after,
+            "font_color":  self._font_color,
+            "title_color": self._title_color,
+        })
 
     def _reset_position(self) -> None:
         screen = QApplication.primaryScreen().availableGeometry()
