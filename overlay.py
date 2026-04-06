@@ -461,6 +461,10 @@ class LyricsOverlay(QWidget):
 
         menu.addSeparator()
 
+        hide_act = QAction("  Hide to Tray", menu)
+        hide_act.triggered.connect(self.hide)
+        menu.addAction(hide_act)
+
         quit_act = QAction("  Quit", menu)
         quit_act.triggered.connect(QApplication.quit)
         menu.addAction(quit_act)
