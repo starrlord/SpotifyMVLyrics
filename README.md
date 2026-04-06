@@ -68,7 +68,8 @@ Once saved, a browser tab opens for Spotify OAuth login. After you approve it, t
 | Left-drag the overlay | Move it anywhere on screen |
 | Drag the bottom-right corner | Resize the overlay |
 | Right-click the overlay | Open the configuration menu |
-| Left-click the tray icon | Toggle overlay visibility |
+| Right-click the overlay → Hide to Tray | Hide the overlay without quitting |
+| Left-click the tray icon | Show or hide the overlay |
 | Right-click the tray icon | Quit |
 
 The overlay hides automatically when nothing is playing or no lyrics are found for the current track.

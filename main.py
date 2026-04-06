@@ -55,11 +55,14 @@ def main() -> int:
     overlay.credentials_saved.connect(ctrl.restart_poller)
 
     # Tray left-click toggles visibility
-    tray.activated.connect(
-        lambda reason: overlay.setVisible(not overlay.isVisible())
-        if reason == QSystemTrayIcon.ActivationReason.Trigger
-        else None
-    )
+    def _tray_clicked(reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if overlay.isVisible():
+                overlay._hide_to_tray()
+            else:
+                overlay.show_from_tray()
+
+    tray.activated.connect(_tray_clicked)
 
     overlay.show()
 

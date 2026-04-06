@@ -182,6 +182,7 @@ class LyricsOverlay(QWidget):
         self._font_small  : int = config.OVERLAY_FONT_SMALL_PX
         self._n_before    : int = config.OVERLAY_LINES_BEFORE
         self._n_after     : int = config.OVERLAY_LINES_AFTER
+        self._user_hidden : bool = False   # True when the user chose "Hide to Tray"
 
         self._setup_window()
 
@@ -216,7 +217,7 @@ class LyricsOverlay(QWidget):
     def update_display(self, lines: list[str], current_idx: int) -> None:
         self._lines       = lines
         self._current_idx = current_idx
-        if not self.isVisible():
+        if not self.isVisible() and not self._user_hidden:
             self.show()
         self.update()
 
@@ -233,6 +234,11 @@ class LyricsOverlay(QWidget):
         self._lines       = []
         self._current_idx = -1
         self.hide()
+
+    def show_from_tray(self) -> None:
+        """Restore the overlay from the tray — clears the user-hidden flag."""
+        self._user_hidden = False
+        self.show()
 
     # ── Painting ───────────────────────────────────────────────────────────────
 
@@ -462,7 +468,7 @@ class LyricsOverlay(QWidget):
         menu.addSeparator()
 
         hide_act = QAction("  Hide to Tray", menu)
-        hide_act.triggered.connect(self.hide)
+        hide_act.triggered.connect(self._hide_to_tray)
         menu.addAction(hide_act)
 
         quit_act = QAction("  Quit", menu)
@@ -472,6 +478,10 @@ class LyricsOverlay(QWidget):
         menu.exec(event.globalPos())
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _hide_to_tray(self) -> None:
+        self._user_hidden = True
+        self.hide()
 
     def _open_credentials_dialog(self) -> None:
         dlg = CredentialsDialog(self)
