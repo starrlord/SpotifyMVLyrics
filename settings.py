@@ -16,6 +16,8 @@ _DEFAULTS: dict = {
     "n_after":      2,
     "font_color":   "#ffffff",
     "title_color":  "#1db954",
+    "vis_enabled":  True,
+    "vis_color":    "#1db954",
 }
 
 

@@ -7,8 +7,9 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QPixmap, QColor, QAction, QPainter
 from PyQt6.QtCore import Qt
 
-from controller import AppController
-from overlay    import LyricsOverlay
+from controller    import AppController
+from overlay       import LyricsOverlay
+from audio_capture import AudioCapture
 import credentials
 
 
@@ -64,6 +65,22 @@ def main() -> int:
 
     tray.activated.connect(_tray_clicked)
 
+    # ── Audio visualizer ──────────────────────────────────────────────────────
+    capture = AudioCapture()
+    capture.bands_ready.connect(overlay.update_visualizer)
+    capture.capture_error.connect(lambda e: overlay.update_status(f"Visualizer: {e}"))
+    capture.start()
+
+    def _restart_capture(device: dict | None) -> None:
+        capture.stop()
+        capture.wait(2000)
+        capture._device   = device
+        capture._running  = False
+        capture.bands_ready.connect(overlay.update_visualizer)
+        capture.start()
+
+    overlay.capture_device_changed.connect(_restart_capture)
+
     overlay.show()
 
     if credentials.are_set():
@@ -72,11 +89,12 @@ def main() -> int:
         overlay.update_status(
             "No Spotify credentials set.\nRight-click \u2192 Spotify Credentials\u2026"
         )
-        # First-time setup: start the controller once credentials are saved
         overlay.credentials_saved.connect(ctrl.start, Qt.ConnectionType.SingleShotConnection)
 
     ret = app.exec()
     ctrl.stop()
+    capture.stop()
+    capture.wait(2000)
     return ret
 
 

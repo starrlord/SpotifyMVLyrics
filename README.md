@@ -1,6 +1,6 @@
 # Spotify MV Lyrics Overlay
 
-A transparent, always-on-top lyrics overlay for Spotify on Windows. Displays time-synced lyrics over songs and music videos (or anything else on your screen) pulled automatically from the currently playing track.
+A transparent, always-on-top lyrics overlay for Spotify on Windows. Displays time-synced lyrics and a real-time music visualizer over songs and music videos (or anything else on your screen).
 
 ![overlay example](assets/image.png)
 
@@ -11,9 +11,10 @@ A transparent, always-on-top lyrics overlay for Spotify on Windows. Displays tim
 - **Auto-detects** the currently playing Spotify track via the Web API
 - **Time-synced lyrics** — lines advance in real time with the song
 - **Graceful fallback** — uses plain lyrics (estimated scroll) when no synced version exists
+- **Music visualizer** — frequency bar visualizer rendered behind the lyrics, driven by live system audio capture
 - **Transparent overlay** — sits on top of Spotify's music video player
 - **Draggable & resizable** — position and size it however you like
-- **Right-click config menu** — adjust opacity, font size, font face, and context lines live
+- **Right-click config menu** — adjust all appearance settings live; everything persists across restarts
 - **System tray icon** — click to show/hide, right-click to quit
 - **Credentials stored securely** — API keys saved to a local file, never in source code
 - No ads, no account required for lyrics ([lrclib.net](https://lrclib.net) is free and open)
@@ -25,6 +26,7 @@ A transparent, always-on-top lyrics overlay for Spotify on Windows. Displays tim
 - Windows 10 / 11
 - Python 3.10+
 - A free [Spotify Developer](https://developer.spotify.com/dashboard) app (takes ~2 minutes to set up)
+- **Stereo Mix enabled** in Windows sound settings (required for the visualizer — see below)
 
 ---
 
@@ -36,7 +38,18 @@ A transparent, always-on-top lyrics overlay for Spotify on Windows. Displays tim
 pip install -r requirements.txt
 ```
 
-### 2. Create a Spotify Developer app
+### 2. Enable Stereo Mix (for the visualizer)
+
+The visualizer captures whatever audio is playing through your speakers.
+
+1. Right-click the speaker icon in the taskbar → **Sounds**.
+2. Go to the **Recording** tab.
+3. Right-click in the device list and enable **Show Disabled Devices**.
+4. Right-click **Stereo Mix** → **Enable**.
+
+> If Stereo Mix doesn't appear, your audio driver may not support it. You can still use the app without the visualizer — toggle it off via right-click → **Visualizer → Show Visualizer**.
+
+### 3. Create a Spotify Developer app
 
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in.
 2. Click **Create App** — any name and description will do.
@@ -46,7 +59,7 @@ pip install -r requirements.txt
    ```
 4. Save, then copy your **Client ID** and **Client Secret**.
 
-### 3. Run
+### 4. Run
 
 ```bash
 python main.py
@@ -68,7 +81,7 @@ Once saved, a browser tab opens for Spotify OAuth login. After you approve it, t
 | Left-drag the overlay | Move it anywhere on screen |
 | Drag the bottom-right corner | Resize the overlay |
 | Right-click the overlay | Open the configuration menu |
-| Right-click the overlay → Hide to Tray | Hide the overlay without quitting |
+| Right-click → Hide to Tray | Hide the overlay without quitting |
 | Left-click the tray icon | Show or hide the overlay |
 | Right-click the tray icon | Quit |
 
@@ -78,18 +91,44 @@ The overlay hides automatically when nothing is playing or no lyrics are found f
 
 ## Configuration
 
-All settings are accessible via the **right-click menu** on the overlay and are automatically saved to `settings.json`. Your preferences are restored the next time the app starts — no file editing required.
+All settings are accessible via the **right-click menu** and are automatically saved to `settings.json`. Preferences are restored the next time the app starts — no file editing required.
+
+### Appearance
+
+| Menu | Options |
+|---|---|
+| **Opacity** | 40% / 55% / 70% / 85% / 100% |
+| **Font Size** | Small (16px) / Medium (20px) / Large (24px) / X-Large (30px) |
+| **Font** | Segoe UI / Arial / Calibri / Georgia / Consolas |
+| **Lyric Color** | 7 presets + Custom… (full color picker) |
+| **Title Color** | 7 presets + Custom… — controls the track name header |
+
+### Lyrics
+
+| Menu | Options |
+|---|---|
+| **Context Lines** | 1 / 2 / 3 / 4 lines shown above and below the current line |
+
+### Visualizer
+
+| Menu | Options |
+|---|---|
+| **Show Visualizer** | Toggle the frequency bar visualizer on/off |
+| **Visualizer Color** | 7 presets + Custom… |
+| **Capture Device** | Auto (default output) or pick any specific device from the list |
+
+### Spotify
 
 | Menu | Options |
 |---|---|
 | **Spotify Credentials…** | Enter / update your Client ID and Client Secret |
-| **Opacity** | 40% / 55% / 70% / 85% / 100% |
-| **Font Size** | Small (16px) / Medium (20px) / Large (24px) / X-Large (30px) |
-| **Font** | Segoe UI / Arial / Calibri / Georgia / Consolas |
-| **Lyric Color** | White / Light Gray / Spotify Green / Sky Blue / Soft Yellow / Coral / Lavender / Custom… |
-| **Title Color** | Same presets as Lyric Color — controls the track name header |
-| **Context Lines** | 1 / 2 / 3 / 4 lines shown above and below the current line |
+
+### Window
+
+| Menu | Options |
+|---|---|
 | **Reset Position** | Snap overlay back to bottom-center of screen |
+| **Hide to Tray** | Hide the overlay without quitting |
 
 Default values for window size and polling interval can be changed in `config.py`:
 
@@ -108,10 +147,12 @@ SpotifyMVLyrics/
 ├── main.py              # Entry point — wires everything together
 ├── config.py            # Window size and polling defaults
 ├── credentials.py       # Reads/writes .credentials.json
+├── settings.py          # Reads/writes settings.json (appearance prefs)
 ├── controller.py        # Orchestrates polling, fetching, and sync timing
 ├── spotify_poller.py    # QThread — polls Spotify Web API every second
 ├── lyrics_fetcher.py    # QThread — fetches synced lyrics from lrclib.net
 ├── lrc_parser.py        # Parses LRC [mm:ss.xx] format into timestamped lines
+├── audio_capture.py     # QThread — captures system audio and emits FFT bands
 ├── overlay.py           # PyQt6 transparent overlay widget + config menu
 ├── settings.json        # Saved appearance preferences (created on first change)
 ├── .credentials.json    # Your API keys (git-ignored, created on first save)
@@ -131,7 +172,9 @@ SpotifyMVLyrics/
 
 4. **`LyricsOverlay`** receives the current line index and the surrounding context, then renders them with a custom `paintEvent`: the active line gets a highlight bar and full brightness; surrounding lines are progressively dimmed.
 
-5. **Credentials** are read from `.credentials.json` at startup and whenever the poller is restarted. Saving new credentials via the dialog automatically restarts the poller and clears the OAuth cache so a fresh login flow begins.
+5. **`AudioCapture`** runs on its own thread, recording from **Stereo Mix** (or a user-selected device) at 44.1 kHz. Each frame is windowed with a Hanning function, run through a 2048-point FFT, and mapped to 48 log-spaced frequency bands from 40 Hz to 16 kHz. Bands are normalised against a running peak and smoothed per-band (fast attack, slow decay) before being emitted at ~30 fps. The overlay renders the bands as bars drawn behind the lyrics.
+
+6. **Credentials** are read from `.credentials.json` at startup and whenever the poller is restarted. Saving new credentials via the dialog automatically restarts the poller and clears the OAuth cache so a fresh login flow begins.
 
 ---
 
@@ -160,3 +203,8 @@ Lyrics are fetched from [lrclib.net](https://lrclib.net) — a free, open, commu
 
 **Lyrics are out of sync**
 - Spotify's API can have up to ~1 s of latency. The app interpolates between polls to compensate, but a very slow network connection can increase drift.
+
+**Visualizer shows nothing**
+- Ensure **Stereo Mix** is enabled in Windows → Sounds → Recording tab (see Setup step 2).
+- Right-click the overlay → **Visualizer → Capture Device** and try selecting a device manually.
+- If no suitable device is found, the visualizer is silently disabled. You can turn it off via **Visualizer → Show Visualizer**.

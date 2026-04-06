@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QWidget, QApplication, QMenu, QSizeGrip,
 import config
 import credentials
 import settings
+from audio_capture import list_capture_devices, default_capture_device
 
 _HEADER_H  = 34   # px reserved for track title at top
 _GRIP_SIZE = 22   # resize grip square
@@ -165,7 +166,8 @@ class LyricsOverlay(QWidget):
     • Right-click for the full configuration menu.
     """
 
-    credentials_saved = pyqtSignal()   # emitted after new credentials are written
+    credentials_saved      = pyqtSignal()        # emitted after new credentials are written
+    capture_device_changed = pyqtSignal(object)  # dict | None — None means auto
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -187,6 +189,10 @@ class LyricsOverlay(QWidget):
         self._n_after     : int    = _s["n_after"]
         self._font_color  : QColor = settings.color(_s["font_color"])
         self._title_color : QColor = settings.color(_s["title_color"])
+        self._vis_enabled : bool        = bool(_s["vis_enabled"])
+        self._vis_color   : QColor      = settings.color(_s["vis_color"])
+        self._vis_bands   : list[float] = []   # latest smoothed amplitudes from AudioCapture
+        self._vis_device  : dict | None = None  # None = auto-detect
         self._user_hidden : bool   = False   # True when the user chose "Hide to Tray"
 
         self._setup_window()
@@ -235,6 +241,12 @@ class LyricsOverlay(QWidget):
         self._status = status
         self.update()
 
+    def update_visualizer(self, bands: list[float]) -> None:
+        """Receive new band amplitudes from AudioCapture and repaint."""
+        if self._vis_enabled:
+            self._vis_bands = bands
+            self.update()
+
     def hide_for_no_lyrics(self) -> None:
         self._lines       = []
         self._current_idx = -1
@@ -280,6 +292,8 @@ class LyricsOverlay(QWidget):
         painter.setPen(QColor(255, 255, 255, 18))
         painter.drawLine(margin, _HEADER_H, w - margin, _HEADER_H)
         painter.setPen(Qt.PenStyle.NoPen)
+
+        self._draw_visualizer(painter, w, h, margin)
 
         if not self._lines:
             self._draw_status(painter, w, h, margin)
@@ -352,6 +366,42 @@ class LyricsOverlay(QWidget):
             int(Qt.AlignmentFlag.AlignCenter),
             self._status,
         )
+
+    def _draw_visualizer(self, painter: QPainter, w: int, h: int, margin: int) -> None:
+        if not self._vis_enabled or not self._vis_bands:
+            return
+
+        n          = len(self._vis_bands)
+        avail_w    = w - margin * 2
+        bar_w      = avail_w / n
+        max_bar_h  = (h - _HEADER_H - 10) * 0.85  # fill most of the lyric area
+        base_y     = h - 8
+
+        for i, amp in enumerate(self._vis_bands):
+            if amp < 0.01:
+                continue
+            bar_h = amp * max_bar_h
+            x     = margin + i * bar_w
+
+            # Base colour with amplitude-driven alpha so quiet bands fade out
+            c = QColor(self._vis_color)
+            c.setAlpha(int(30 + amp * 110))
+            painter.setBrush(QBrush(c))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(
+                QRectF(x + 1, base_y - bar_h, max(bar_w - 2, 1), bar_h),
+                2, 2,
+            )
+
+            # Bright cap at the top of each bar
+            cap_h = max(bar_w * 0.4, 2)
+            cc = QColor(self._vis_color)
+            cc.setAlpha(int(80 + amp * 160))
+            painter.setBrush(QBrush(cc))
+            painter.drawRoundedRect(
+                QRectF(x + 1, base_y - bar_h - cap_h, max(bar_w - 2, 1), cap_h),
+                1, 1,
+            )
 
     def _draw_grip_hint(self, painter: QPainter, w: int, h: int) -> None:
         painter.setPen(QColor(255, 255, 255, 45))
@@ -467,6 +517,49 @@ class LyricsOverlay(QWidget):
 
         menu.addSeparator()
 
+        # ── Visualizer ────────────────────────────────────────────────────────
+        _section(menu, "  Visualizer")
+
+        vis_toggle = QAction("  Show Visualizer", menu)
+        vis_toggle.setCheckable(True)
+        vis_toggle.setChecked(self._vis_enabled)
+        vis_toggle.triggered.connect(lambda checked: self._set("_vis_enabled", checked))
+        menu.addAction(vis_toggle)
+
+        vis_color_menu = self._make_color_menu(
+            menu, "  Visualizer Color", self._vis_color,
+            lambda c: self._set("_vis_color", c),
+        )
+        menu.addMenu(vis_color_menu)
+
+        device_menu = QMenu("  Capture Device", menu)
+        device_menu.setStyleSheet(_MENU_QSS)
+        dev_grp = QActionGroup(device_menu)
+        dev_grp.setExclusive(True)
+
+        auto_act = QAction("  Auto (default output)", device_menu)
+        auto_act.setCheckable(True)
+        auto_act.setChecked(self._vis_device is None)
+        auto_act.triggered.connect(lambda: self._set_capture_device(None))
+        dev_grp.addAction(auto_act)
+        device_menu.addAction(auto_act)
+        device_menu.addSeparator()
+
+        for dev in list_capture_devices():
+            a = QAction(f"  {dev['name']}", device_menu)
+            a.setCheckable(True)
+            a.setChecked(
+                self._vis_device is not None
+                and self._vis_device["index"] == dev["index"]
+            )
+            a.triggered.connect(lambda _, d=dev: self._set_capture_device(d))
+            dev_grp.addAction(a)
+            device_menu.addAction(a)
+
+        menu.addMenu(device_menu)
+
+        menu.addSeparator()
+
         # ── Spotify ───────────────────────────────────────────────────────────
         _section(menu, "  Spotify")
 
@@ -553,6 +646,10 @@ class LyricsOverlay(QWidget):
         if color.isValid():
             apply_fn(color)
 
+    def _set_capture_device(self, device: dict | None) -> None:
+        self._vis_device = device
+        self.capture_device_changed.emit(device)
+
     def _hide_to_tray(self) -> None:
         self._user_hidden = True
         self.hide()
@@ -578,6 +675,8 @@ class LyricsOverlay(QWidget):
             "n_after":     self._n_after,
             "font_color":  self._font_color,
             "title_color": self._title_color,
+            "vis_enabled": self._vis_enabled,
+            "vis_color":   self._vis_color,
         })
 
     def _reset_position(self) -> None:
